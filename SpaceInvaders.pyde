@@ -1,8 +1,10 @@
-ENEMY_ROW = 5
-ENEMY_COL = 8
+add_library('minim')
 
-MAX_PLAYER_BULLETS = 5
-ADDED_BULLETS = 2
+ENEMY_ROW = 1 #to decide how many enemies appear
+ENEMY_COL = 10
+
+MAX_PLAYER_BULLETS = 5 #for the laser booster - it makes the ship shoot 3 bullets at a time
+ADDED_BULLETS = 3
 
 sprites = loadImage(sketchPath('Sprites/SpaceInvaders.png'))
 # cut the ship sprite
@@ -10,13 +12,25 @@ spaceship = sprites.get(68,4,9,10)
 # resize
 spaceship.resize(18, 20)
 
+player = Minim(this)
+
+#class to start the game
 class Game:
     def __init__(self):
+        #set level
         self.level = 1
         self.win = False
         self.score = 0
+        #set aliens
         self.aliens = []
+        #set the life of spaceship
         self.life = spaceship
+        #set shields
+        self.shields = []
+        # load sounds
+        self.bgm = player.loadFile(sketchPath('space_invaders_sounds/bg.mp3'))
+        self.player_death = player.loadFile(sketchPath('space_invaders_sounds/explosion.mp3'))
+        self.pickupsound = player.loadFile(sketchPath('space_invaders_sounds/eat.mp3'))
         
     def start(self):
         self.player = Player()
@@ -24,21 +38,25 @@ class Game:
         self.alien_bullet = Bullet(-1, -1, 'enemy')
         self.button = Button(width/2-50, height/2+20, 100, 40)
         self.gameOver = False
-        self.pickups = []
+        self.bgm.loop()
+        self.pickups = [] #pickups = boosters
         for i in range(ENEMY_ROW):
                 self.aliens.append([])
                 for j in range(ENEMY_COL):
                     self.aliens[i].append(Alien(i, j))
+        for i in range(3):
+            self.shields.append(Shield(i))
     
     def change_level(self):
+        #increase level
         self.level = self.level + 1
-        if(self.level == 5):
-            self.gameOver = True
-            # add a function to show that player has beaten the game
-            # self.won()
+        if(self.level == 3):
+            self.gameOver = True #gameover once 2 levels are completed
+            self.bgm.pause()
         self.load_level(self.level)
     
     def load_level(self, level_number):
+        #make aliens appear when a level is loaded
         if(level_number == 1):
             for i in range(ENEMY_ROW):
                 self.aliens.append([])
@@ -48,9 +66,9 @@ class Game:
             for i in range(ENEMY_ROW):
                 for j in range(ENEMY_COL):
                     self.aliens[i][j].clear_attributes(i, j)
-                    self.aliens[i][j].alive = True
-                    self.aliens[i][j].speed = 0.5
-                    self.aliens[i][j].dropPickups = True
+                    self.aliens[i][j].alive = True #reaactivating the alien alive attribute
+                    self.aliens[i][j].speed = 0.9 #increased alien speed
+                    self.aliens[i][j].dropPickups = True #pickups dropped only in the second level
     
     # check collision with enemy bullet
     def player_collision(self, object):
@@ -68,13 +86,21 @@ class Game:
             if object.type == 'enemy':    
                 # if collided, remove the bullet and destroy ship
                 object.pos = [-1, -1]
+                self.player_death.rewind()
+                self.player_death.play()
                 self.player.hit()
-            elif object.type == 'shield':
+            elif object.type == 'life':
                 # add health
+                self.pickupsound.rewind()
+                self.pickupsound.play()
                 if(self.player.health < 3):
                     self.player.health += 1
+                    
                 self.pickups.remove(object)
             elif object.type == 'laser':
+                # make the ship shoot 3 bullets in one go
+                self.pickupsound.rewind()
+                self.pickupsound.play()
                 self.pickups.remove(object)
                 self.player.laser = True
         
@@ -87,11 +113,19 @@ class Game:
             for alien in row:
                 if alien.alive:
                     alive.append(alien)
+                    
         if len(alive) == 0:
             self.change_level()
         else:
             alien = alive[int(random(len(alive)))]
             self.alien_bullet.pos = [alien.pos[0] + alien.sprites[0].width/2+1, alien.pos[1] + alien.sprites[0].height]
+    
+    #check shield collision with bullets        
+    def shield_collisions(self):
+        for shield in self.shields:
+                shield.collision(self.alien_bullet)
+        for shield in self.shields:
+                shield.collision(self.player.shot)
         
     # check alien collisions with bullet
     def alien_collision(self, bullets):
@@ -100,14 +134,16 @@ class Game:
                 if alien.alive:
                     for bullet in bullets:
                         if bullet.pos[1] <= 0:
-                            self.player.shots.remove(bullet)
-                            self.player.bullet += 1
+                            self.player.shots.remove(bullet) 
+                            self.player.bullet += 1 #add a bullet when a fired bullet hits the enemy
                             break
                         pickup = alien.collision(bullet)
                         if(pickup == True):
                             self.player.shots.remove(bullet)
-                            self.player.bullet += 1
-                        elif(pickup != None):
+                            self.player.bullet += 1 
+                        #drop a pickup
+                        elif(pickup != None): 
+                            self.player.shots.remove(bullet)
                             return pickup
         return None
         
@@ -118,6 +154,7 @@ class Game:
                 if alien.alive and alien.pos[1] >= 2*height/3:
                     self.player.destroy()
                     self.gameOver = True
+                    self.bgm.pause()
     
     def update_aliens(self):
         onedge = False
@@ -136,6 +173,11 @@ class Game:
                 else:
                     alien.dir *= -1
                     alien.move_down()
+                    
+    def update_shields(self):
+        self.shield_collisions()
+        for shield in self.shields:
+            shield.draw()
                                     
     def update(self):
         # clear screen
@@ -167,6 +209,8 @@ class Game:
             self.alien_shoot()
             # update bullet
             self.alien_bullet.update()
+            # update shields
+            self.update_shields()
             
     def show_gameover(self):
         textFont(font, 24)
@@ -188,7 +232,7 @@ class Game:
         if len(self.pickups) > 0:
             for pickup in self.pickups:
                 pickup.draw() 
-        
+        self.update_shields()
         # draw ui
         textFont(font, 12)
         fill(154, 217, 65)
@@ -206,7 +250,7 @@ class Game:
         b = "Bullets: " + str(self.player.bullet)
         print(str(len(self.player.shots)) + " " + str(self.player.bullet))
         textAlign(RIGHT)
-        text(b, width - 16 , 64);
+        text(b, width - 16 , 64)
     
 # class for displaying the background
 class Background:
@@ -247,7 +291,6 @@ class Player:
     
     def __init__(self):
         # load the image
-        # print(sketchPath('Sprites/SpaceInvaders.png'))
         self.sprite = spaceship
         # set starting position
         self.pos = (width/2 - self.sprite.width/2, 2*height/3 + 32)
@@ -263,6 +306,10 @@ class Player:
         # additional booleans
         self.alive = True
         self.laser = False
+        # add bullet position
+        self.shot = Bullet(self.pos[0], self.pos[1],'player')
+        self.shotsound = player.loadFile(sketchPath('space_invaders_sounds/shoot.mp3'))
+        
         
     # set the direction of movement
     def setMove(self, code, val):
@@ -274,8 +321,8 @@ class Player:
     def update(self):
         if self.laser:
             self.laser = False
-            if self.bullet <= MAX_PLAYER_BULLETS:
-                self.bullet += ADDED_BULLETS
+            if self.bullet <= MAX_PLAYER_BULLETS-2:
+                self.bullet += ADDED_BULLETS 
         
         if(len(self.shots)>0):
             for shot in self.shots:
@@ -303,9 +350,12 @@ class Player:
                 self.bullet += 1
             
             if(len(self.shots)<self.bullet):
-                shot = Bullet(self.pos[0], self.pos[1],'player')
-                shot.speed = 5
-                self.shots.append(shot)
+                self.shot = Bullet(self.pos[0], self.pos[1],'player')
+                self.shot.speed = 5
+                self.shotsound.rewind()
+                self.shotsound.play()
+                self.shots.append(self.shot)
+        
             
     def draw(self):
         if self.alive:
@@ -315,15 +365,12 @@ class Player:
     
     # destroy the player
     def hit(self):
-        self.health -= 1
+        self.health -= 1 #health decreases by 1 for 1 hit
         if self.health == 0:
             self.alive = False
             game.gameOver = True
-    
-    def destroy(self):
-        self.alive = False
-        game.gameOver = True
-        
+            game.bgm.pause()
+                
 class Alien:
     def __init__(self, index, col):
         # set sprite size
@@ -336,13 +383,14 @@ class Alien:
         self.sprites[0].resize(sprite_size, sprite_size)
         self.sprites[1].resize(sprite_size, sprite_size)
         self.clear_attributes(index, col)
+        self.aliendeath = player.loadFile(sketchPath('space_invaders_sounds/invaderkilled.mp3'))
         
     def clear_attributes(self, index, col):
         # set position
         y = 100 + self.sprite_size * index
         x = width/2 - 160 + self.sprite_size * col
         self.pos = (x, y)
-        self.speed = 0.3
+        self.speed = 0.5
         self.alive = True
         self.dir = 1
         self.canmove =  True
@@ -385,12 +433,15 @@ class Alien:
         # if collided, remove the bullet and destroy alien
         if rectOneRight > rectTwoLeft and rectOneLeft < rectTwoRight and rectOneBottom > rectTwoTop and rectOneTop < rectTwoBottom:
             self.alive = False
+            self.aliendeath.rewind()
+            self.aliendeath.play()
             # increase score
             game.score += 20
+            # drop pick-ups from randomly destroyed aliens
             if self.dropPickups:
                 ran = random(1)
                 if (ran <= 0.25):
-                    pickup = Pickups(self.pos[0], self.pos[1], "shield")
+                    pickup = Pickups(self.pos[0], self.pos[1], "life")
                     return pickup
                 elif (ran > 0.25 and ran <= 0.5):
                     pickup = Pickups(self.pos[0], self.pos[1], "laser")
@@ -404,11 +455,11 @@ class Pickups:
         self.type = type
         self.speed = 2
         
-        if self.type == "shield":
+        if self.type == "life": #life increases health by 1
             self.sprite = sprites.get(48, 0, 16, 16)
             # resize
             self.sprite.resize(20, 20)
-        elif self.type == "laser":
+        elif self.type == "laser": #laser increases bullets fired in a single go to 3
             self.sprite = sprites.get(32, 32, 16, 16)
             # resize
             self.sprite.resize(20, 20)
@@ -451,7 +502,52 @@ class Bullet:
             return
         image(self.sprite, self.pos[0],self.pos[1])
 
+class Shield:
+    def __init__(self, xpos):
+        # load spritesheet
+        self.sprite = loadImage(sketchPath('Sprites/SpaceInvaders.png'))
+        # cut the sprites
+        self.sprites = [sprites.get(51, 20, 26, 12)]
+        self.sprites.append(sprites.get(51, 36, 26, 12))
+        self.sprites.append(sprites.get(51, 52, 26, 12))
+        self.sprites.append(sprites.get(51, 68, 26, 12))
+        # resize the sprite
+        for sprite in self.sprites:
+            sprite.resize(52, 24)
+        # set position
+        y = 2*height/3
+        x = ((xpos*width/3) + ((xpos+1)*width/3)) / 2 - self.sprites[0].width/2
+        self.pos = (x, y)
+        self.health = 7
+        
+        
+    def draw(self):
+        index = 3-self.health//2
+        if index < 4:
+            image(self.sprites[index], self.pos[0],self.pos[1])
+        
 
+    # check collision with bullet
+    def collision(self, bullet):
+        if self.health < 0:
+            return False
+        rectOneRight = self.pos[0] + self.sprites[0].width
+        rectOneLeft = self.pos[0]
+        rectOneTop = self.pos[1]
+        rectOneBottom = self.pos[1] + self.sprites[0].height
+        
+        rectTwoRight = bullet.pos[0] + bullet.sprite.width
+        rectTwoLeft = bullet.pos[0]
+        rectTwoTop = bullet.pos[1]
+        rectTwoBottom = bullet.pos[1] + bullet.sprite.height
+        
+        # if collided, remove the bullet and reduce shield health
+        if rectOneRight > rectTwoLeft and rectOneLeft < rectTwoRight and rectOneBottom > rectTwoTop and rectOneTop < rectTwoBottom:
+            bullet.pos = (-1, -1)  
+            self.health -= 1
+            return True
+        return False
+    
 # class for the Restart Button
 class Button:
     
@@ -482,14 +578,14 @@ class Button:
             return False
         return True
    
-# global variables
+
 game = Game()
 font = None
 
 def setup():
     global font
     # initialize game window
-    size(320, 600)
+    size(480, 600)
     noSmooth()
     noStroke()
     
@@ -504,6 +600,7 @@ def draw():
     if not game.gameOver:
         game.update()
         game.draw()
+         
     else:
         game.show_gameover()        
             
@@ -524,3 +621,5 @@ def mousePressed():
             game = Game()
             game.start()
             game.load_level(1)
+            game.bgm.rewind()
+            game.bgm.loop()
